@@ -1,7 +1,7 @@
 from dataclasses import asdict
-from django.db import IntegrityError, DataError, DatabaseError
 import logging
 from typing import Any
+from common.constants import DB_WRITE_EXCEPTIONS 
 from ..errors.persistence_errors import PersistenceError
 from ..models import EntityPrediction
 from ..schemas import EntityPredictionData
@@ -21,7 +21,7 @@ class EntityPersistenceService:
                 entities=self._serialize_entities(),
                 version=self.data.version,
             )
-        except (IntegrityError, DataError, DatabaseError) as e:
+        except DB_WRITE_EXCEPTIONS as e:
             msg = f"Failed to persist EntityPrediction for sms_id `{self.data.sms_id}`"
             logger.error(msg, exc_info=True)
             raise PersistenceError(msg) from e

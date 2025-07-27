@@ -46,8 +46,8 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     
     # Mine
-    "common",
     "nlp",
+    "resolvers",
 ]
 
 MIDDLEWARE = [
