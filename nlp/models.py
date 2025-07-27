@@ -1,7 +1,7 @@
 from django.db import models
 
 
-class NERPrediction(models.Model):
+class EntityPrediction(models.Model):
     
     sms_inquiry_id = models.IntegerField()
     model_version = models.CharField(max_length=16)
