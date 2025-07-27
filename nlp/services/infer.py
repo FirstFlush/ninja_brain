@@ -40,6 +40,9 @@ class EntityInferenceService:
             entities = entities,
         )
 
+    def version(self) -> str:
+        return self.model.meta.get("version", "unknown")
+
     def _validate_input(self, text: str):
         if not isinstance(text, str):
             msg = f"Expected 'text' parameter to be a string, got `{type(text)}`"
