@@ -45,7 +45,7 @@ class EntityPersistenceService:
                 ml_model=ml_model,
                 sms_id=self.data.sms_id,
                 response_time_ms=self.data.elapsed_ms,
-                entities=self._serialize_entities(),
+                extracted_entities=self._serialize_entities(),
             )
         except DB_WRITE_EXCEPTIONS as e:
             msg = f"Failed to persist EntityPrediction for sms_id `{self.data.sms_id}`"
