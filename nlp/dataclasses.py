@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from .enums import MLModelEnum
 
 @dataclass
 class EntitySpan:
@@ -10,4 +11,6 @@ class EntitySpan:
 @dataclass
 class InferredEntities:
     text: str
+    ml_model_enum: MLModelEnum
+    version: str
     entities: list[EntitySpan]

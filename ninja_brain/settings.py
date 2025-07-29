@@ -35,6 +35,11 @@ if DEBUG == True:
 else:
     ALLOWED_HOSTS = []
 
+
+# Env Vars
+ML_MODEL = os.getenv("ML_MODEL", "en_streetninja")
+
+
 # Application definition
 
 INSTALLED_APPS = [
