@@ -1,105 +1,119 @@
+from abc import ABC, abstractmethod
+from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
-from typing import Generic, TypeVar
+from typing import Any, Generic, TypeVar
 from .errors import ApiPayloadBuilderError, ApiResponseBuilderError
-from .schemas import ApiPayload, ApiErrorPayload, ApiResponse
+from .schemas import SuccessPayload, ErrorPayload, ErrorPayloadData, ApiSuccessResponse, ApiErrorResponse, ResponseMeta
 
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 
-class ApiResponseBuilder(Generic[T]):
+class ApiResponseBuilder(ABC):
+
+    def __init__(self, meta: ResponseMeta | None):
+        if meta is None:
+            self.meta = ResponseMeta(timestamp=datetime.now(tz=timezone.utc))
+        else:
+            self.meta = meta
+
+    @abstractmethod
+    def build(self):
+        pass
     
+    @abstractmethod
+    def _build_response(self):
+        pass
+        
+    @abstractmethod
+    def _build_payload(self):
+        pass
+
+
+class ApiSuccessResponseBuilder(ApiResponseBuilder, Generic[T]):
+
     def __init__(
             self, 
-            payload: ApiPayload[T], 
-            status: HTTPStatus,
+            data: T, 
+            status: HTTPStatus = HTTPStatus.OK,
+            meta: ResponseMeta | None = None,
     ):
-        self.payload = payload
+        self.data = data
         self.status = status
+        super().__init__(meta=meta)
 
-    @classmethod
-    def from_data(cls, data: T, status: HTTPStatus = HTTPStatus.OK) -> "ApiResponse[T]":
-        payload = cls._build_payload(data=data, error=None)
-        response_builder = cls(payload=payload, status=status)
-        return response_builder._build_response()
-    
-    @classmethod
-    def from_error(cls, e: Exception, status: HTTPStatus) -> "ApiResponse[T]":
-        payload = cls._build_payload(data=None, error=e)
-        response_builder = cls(payload=payload, status=status)
-        return response_builder._build_response()
+    def build(self) -> ApiSuccessResponse[T]:
+        payload = self._build_payload(data=self.data)
+        return self._build_response(payload)
 
-    @staticmethod
-    def _build_payload(data: T | None, error: Exception | None) -> "ApiPayload[T]":
-        payload_builder = ApiPayloadBuilder(data=data, error=error)
+    def _build_payload(self, data: T) -> SuccessPayload[T]:
+        payload_builder = SuccessPayloadBuilder(data=data)
         return payload_builder.build_payload()    
-    
-    def _build_response(self) -> ApiResponse:
+
+    def _build_response(self, payload: SuccessPayload[T]) -> ApiSuccessResponse[T]:
         try:
-            api_response = ApiResponse(
-                payload=self.payload,
-                status=self.status
+            api_response = ApiSuccessResponse(
+                payload=payload,
+                status=self.status,
+                meta=self.meta,
             ) 
         except Exception as e:
-            msg = f"Failed to build ApiResponse object due to an unexpected error: {e.__class__.__name__}"
+            msg = f"Failed to build ApiSuccessResponse object due to an unexpected error: {e.__class__.__name__}"
             logger.error(msg, exc_info=True)
             raise ApiResponseBuilderError(msg) from e
         else:
-            logger.debug(f"Succesfully created ApiResponse object with status `{self.status}`")
+            logger.debug(f"Succesfully created ApiSuccessResponse object with status `{self.status}`")
             return api_response
 
-class ApiPayloadBuilder(Generic[T]):
-    """
-    Builds an ApiPayload object from either a success payload or an exception.
 
-    Raises:
-        ApiPayloadBuilderError: If both or neither of `data` and `error` are provided,
-        or if an unexpected error occurs during response construction.
-    """
-    def __init__(
-            self, 
-            data: T | None,
-            error: Exception | None,
-    ):
-        self.data = data
-        self._error = error
-        self._either_check()
-        self.success = self._success()
-
-
-    def build_payload(self) -> ApiPayload:
-        try:
-            error = self._build_error_payload()
-            api_payload = ApiPayload(
-                success=self.success,
-                data=self.data,
-                error=error,
-            )
-        except Exception as e:
-            msg = (
-                f"{self.__class__.__name__}.build_response() failed due to an "
-                f"unexpected error: `{e.__class__.__name__}`"
-            )
-            logger.error(msg, exc_info=True)
-            raise ApiPayloadBuilderError(msg) from e
-        else:
-            logger.debug(f"Built ApiPayload with payload data type `{self.data.__class__.__name__}`")            
-            return api_payload
-
-    def _build_error_payload(self) -> ApiErrorPayload | None:
-        if self._error:
-            error_payload = ApiErrorPayload(
-                type=self._error.__class__.__name__,
-                msg=str(self._error),
-            )
-            logger.debug(f"Built ApiErrorPayload for `{self._error.__class__.__name__}`")
-        else:
-            error_payload = None
-            
-        return error_payload
+class ApiErrorResponseBuilder(ApiResponseBuilder):
     
+    def __init__(
+            self,
+            error: Exception,
+            status: HTTPStatus,
+            meta: ResponseMeta | None = None,
+    ):
+        self.error = error
+        self.status = status
+        super().__init__(meta=meta)
+
+    def build(self) -> ApiErrorResponse:
+        payload = self._build_payload()
+        return self._build_response(payload)
+
+    def _build_payload(self) -> ErrorPayload:
+        payload_builder = ErrorPayloadBuilder(error=self.error)
+        return payload_builder.build_payload()
+    
+    def _build_response(self, payload: ErrorPayload) -> ApiErrorResponse:
+        try:
+            api_response = ApiErrorResponse(
+                payload=payload,
+                status=self.status,
+                meta=self.meta,
+            ) 
+        except Exception as e:
+            msg = f"Failed to build ApiErrorResponse object due to an unexpected error: {e.__class__.__name__}"
+            logger.error(msg, exc_info=True)
+            raise ApiResponseBuilderError(msg) from e
+        else:
+            logger.debug(f"Succesfully created ApiErrorResponse object with status `{self.status}`")
+            return api_response
+
+
+class ApiPayloadBuilder(ABC):
+
+    success: bool
+    data = None
+    _error = None
+
+    @abstractmethod
+    def build_payload(self):
+        pass
+
     def _either_check(self):
         if self.data is None and self._error is not None:
             return
@@ -107,11 +121,76 @@ class ApiPayloadBuilder(Generic[T]):
             return
         else:
             msg = (
-                f"Failed to build ApiPayload. Either {self.__class__.__name__}.data "
+                f"ApiPayloadBuilder failed to build API payload. Either {self.__class__.__name__}.data "
                 f"OR {self.__class__.__name__}.error must be None"
             )
             logger.error(msg)
             raise ApiPayloadBuilderError(msg)
 
-    def _success(self) -> bool:
-        return self.data is not None and self._error is None
+
+class SuccessPayloadBuilder(ApiPayloadBuilder, Generic[T]):
+    """
+    Builds an ApiPayload object from either a success payload or an exception.
+
+    Raises:
+        ApiPayloadBuilderError: If both or neither of `data` and `error` are provided,
+        or if an unexpected error occurs during response construction.
+    """
+    
+    success = True
+    
+    def __init__(self, data: T):
+        self.data = data
+        self._error = None
+        self._either_check()
+
+    def build_payload(self) -> SuccessPayload[T]:
+        try:
+            payload = SuccessPayload(success=True, data=self.data, error=None)
+        except Exception as e:
+            msg = (
+                f"{self.__class__.__name__}.build_payload() failed due to an "
+                f"unexpected error: `{e.__class__.__name__}`"
+            )
+            logger.error(msg, exc_info=True)
+            raise ApiPayloadBuilderError(msg) from e
+
+        logger.debug(f"Built SuccesPayload from payload data type `{self.data.__class__.__name__}`")
+        return payload
+
+
+
+
+class ErrorPayloadBuilder(ApiPayloadBuilder):
+
+    success = False
+
+    def __init__(self, error: Exception):
+        self.data = None
+        self._error = error
+        self._either_check()
+      
+    def build_payload(self) -> ErrorPayload:
+        try:
+            error = self._build_error_payload_data()
+            payload = ErrorPayload(success=False, data=None, error=error)
+        except Exception as e:
+            msg = (
+                f"{self.__class__.__name__}.build_payload() failed due to an "
+                f"unexpected error: `{e.__class__.__name__}`"
+            )
+            logger.error(msg, exc_info=True)
+            raise ApiPayloadBuilderError(msg) from e
+
+        logger.debug(f"Built ErrorPayload from error type `{self._error.__class__.__name__}`")
+        return payload
+
+    def _build_error_payload_data(self) -> ErrorPayloadData:
+        error_payload = ErrorPayloadData(
+            type=self._error.__class__.__name__,
+            msg=str(self._error),
+        )
+        logger.debug(f"Built ErrorPayloadData from error type `{self._error.__class__.__name__}`")
+
+        return error_payload
+    

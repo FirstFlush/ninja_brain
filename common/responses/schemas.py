@@ -1,20 +1,48 @@
+from datetime import datetime
 from http import HTTPStatus
-from pydantic import BaseModel
-from typing import Optional, TypeVar, Generic
+from pydantic import BaseModel, field_validator
+from typing import Any, Literal, TypeVar, Optional, Generic
 
 
 T = TypeVar("T")
 
 
-class ApiErrorPayload(BaseModel):
+class SuccessPayload(BaseModel, Generic[T]):
+    success: Literal[True]
+    data: T
+    error: None
+
+class ErrorPayloadData(BaseModel):
     type: str
     msg: str
 
-class ApiPayload(BaseModel, Generic[T]):
-    success: bool
-    data: Optional[T] = None
-    error: Optional[ApiErrorPayload] = None
+class ErrorPayload(BaseModel):
+    success: Literal[False]
+    data: None
+    error: ErrorPayloadData
 
-class ApiResponse(BaseModel, Generic[T]):
-    payload: ApiPayload[T]
+class ResponseMeta(BaseModel):
+    extra: Optional[dict[str, Any]] = None
+    method: Optional[str] = None
+    path: Optional[str] = None
+    request_id: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    version: Optional[str] = None
+
+    @field_validator("method")
+    @classmethod
+    def normalize_method(cls, v):
+        if isinstance(v, str):
+            return v.upper()
+        return v
+
+class ApiResponse(BaseModel):
     status: HTTPStatus
+    meta: Optional[ResponseMeta] = None
+    
+    
+class ApiSuccessResponse(ApiResponse, Generic[T]):
+    payload: SuccessPayload[T]
+
+class ApiErrorResponse(ApiResponse):
+    payload: ErrorPayload
