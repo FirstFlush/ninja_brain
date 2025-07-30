@@ -22,6 +22,7 @@ class ErrorPayload(BaseModel):
     error: ErrorPayloadData
 
 class ResponseMeta(BaseModel):
+    duration: Optional[float] = None
     extra: Optional[dict[str, Any]] = None
     method: Optional[str] = None
     path: Optional[str] = None

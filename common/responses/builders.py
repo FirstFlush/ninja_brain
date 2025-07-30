@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from http import HTTPStatus
 import logging
-from typing import Any, Generic, TypeVar
+from typing import Generic, TypeVar
 from .errors import ApiPayloadBuilderError, ApiResponseBuilderError
 from .schemas import SuccessPayload, ErrorPayload, ErrorPayloadData, ApiSuccessResponse, ApiErrorResponse, ResponseMeta
 
@@ -18,6 +18,20 @@ class ApiResponseBuilder(ABC):
             self.meta = ResponseMeta(timestamp=datetime.now(tz=timezone.utc))
         else:
             self.meta = meta
+
+    @staticmethod
+    def assert_one_of(data: object | None, error: Exception | None):
+        if data is None and isinstance(error, Exception):
+            return
+        elif data is not None and error is None:
+            return
+        else:
+            msg = (
+                f"Failed to build API response object. Either data "
+                f"OR error must be None. data type`{type(data)}`, error type`{type(error)}`"
+            )
+            logger.error(msg)
+            raise ApiResponseBuilderError(msg)
 
     @abstractmethod
     def build(self):
@@ -114,19 +128,6 @@ class ApiPayloadBuilder(ABC):
     def build_payload(self):
         pass
 
-    def _either_check(self):
-        if self.data is None and self._error is not None:
-            return
-        elif self.data is not None and self._error is None:
-            return
-        else:
-            msg = (
-                f"ApiPayloadBuilder failed to build API payload. Either {self.__class__.__name__}.data "
-                f"OR {self.__class__.__name__}.error must be None"
-            )
-            logger.error(msg)
-            raise ApiPayloadBuilderError(msg)
-
 
 class SuccessPayloadBuilder(ApiPayloadBuilder, Generic[T]):
     """
@@ -142,7 +143,6 @@ class SuccessPayloadBuilder(ApiPayloadBuilder, Generic[T]):
     def __init__(self, data: T):
         self.data = data
         self._error = None
-        self._either_check()
 
     def build_payload(self) -> SuccessPayload[T]:
         try:
@@ -159,8 +159,6 @@ class SuccessPayloadBuilder(ApiPayloadBuilder, Generic[T]):
         return payload
 
 
-
-
 class ErrorPayloadBuilder(ApiPayloadBuilder):
 
     success = False
@@ -168,7 +166,6 @@ class ErrorPayloadBuilder(ApiPayloadBuilder):
     def __init__(self, error: Exception):
         self.data = None
         self._error = error
-        self._either_check()
       
     def build_payload(self) -> ErrorPayload:
         try:
